@@ -1,82 +1,121 @@
 from flask.wrappers import Response
 import requests,json
 from requests.auth  import HTTPBasicAuth
+from decouple import config
 
 from flask import Flask,json,request
 app = Flask(__name__)
 
-
 #mpesa details 
-consumer_key = 'mR0ImhjJEcC0cVefGItVsZOjVi926cfw'
-consumer_secret = 'ZKSVFJqJs3InB03s'
-base_url = "http://102.135.170.111:3400/"
+consumer_key = config('organization_mpesa_api_key')
+consumer_secret = config('organization_mpesa_api_secret')
+base_url = config('organization_mpesa_base_url')
+organization_shortcode = config('organization_shortcode')
+transation_state = config('organization_transation_state')
 
 @app.route('/',methods = ['GET'])
 def home():
-	return 'Hello World'
+	return 'Our Mpesa App Home Page'
 
 @app.route('/access_token')
 def token():
+	'''
+	Function that uses the consumer key and consumer secret
+	to generate and authorization token for a given MPesa app
+	'''
 	return ac_token()
+
+def ac_token():
+	'''
+	Function that fetched authorization token for daraja api
+	'''
+	mpesa_auth_url = 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+	data = (requests.get(mpesa_auth_url,auth = HTTPBasicAuth(consumer_key,consumer_secret))).json()
+	return data['access_token']
 
 #register urls
 @app.route('/register_urls')
 def register():
-	print("*"*80)
-	print("register")
-	mpesa_endpoint = "https://sandbox.safaricom.co.ke/mpesa/c2b/v1/registerurl"
+	'''
+	Function that registers the validation and confirmation urls for an APP
+	in MPesa
+	'''
+	mpesa_endpoint = 'https://api.safaricom.co.ke/mpesa/c2b/v1/registerurl'
 	headers = {
 		"Authorization": "Bearer %s" % ac_token(),
 		"Content-Type": "application/json"
 	}
 
 	req_body = {
-			"ShortCode":"600980",
-			"ResponseType":"Completed",
-			"ConfirmationURL": base_url +"c2b/confirm",
-			"ValidationURL": base_url +"c2b/validation"
+		"ShortCode":organization_shortcode,
+		"ResponseType":transation_state,
+		"ConfirmationURL": base_url +"/c2b/confirm",
+		"ValidationURL": base_url +"/c2b/validation"
 	}
-
-	print(req_body)
 
 	response_data = requests.post(
 		mpesa_endpoint,
 		json = req_body,
 		headers = headers
 	)
-	print(response_data)
-	print(response_data.headers)
-	print(response_data.text)
+	#return the response data
 	return response_data.json()
 
 
 @app.route('/c2b/confirm',methods = ['GET','POST'])
 def confirm():
-	print("*"*80)
-	print("trying to confim")
+	'''
+	This is an endpoint that receives confirmation from 
+	Mpesa when a transation is completed successfully
+	'''
 	#get data
 	data = request.get_json()
-	print(data)
-	# # write to file
-	# file = open('confirm.json','a')
-	# file.write(data)
-	# file.close()
-	return json.jsonify({'status':'Success'})
+	#call the payment processing on the recieved data
+	payment_status = process_payment(data)
+	#return sucess
+	return {'status':'Success'}
 
 @app.route('/c2b/validation')
 def validate():
+	'''
+	Function that recives a validation request from mpesa before a
+	transaction is completed. A request is only sent to this URL is 
+	external validation is activated
+	'''
+	#we currently have not active external validation hence just pass
 	pass
-	# #get data
-	# data = requests.get_json()
-	# # write to file
-	# file = open('confirm.json','a')
-	# file.write(data)
-	# file.close()
+	return {'status':'Success'}
 
-def ac_token():
-	mpesa_auth_url = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
-	data = (requests.get(mpesa_auth_url,auth = HTTPBasicAuth(consumer_key,consumer_secret))).json()
-	return data['access_token']
+def process_payment(transaction):
+	'''
+	Function that uses the data from the transaction response i.e confirm
+	url to create process payment that can be stored locally
+	input: 
+		transaction - dict
+	output:
+		None
+	'''
+	#get various details
+	customer_acc = transaction.get('BillRefNumber')
+	customer_phone_num = transaction.get('MSISDN')
+	customer_first_name = transaction.get('FirstName')
+	customer_middle_name = transaction.get('MiddleName')
+	customer_last_name = transaction.get('LastName')
+	transaction_amount = transaction.get('TransAmount')
+	transaction_id = transaction.get('TransID')
+	transaction_type = transaction.get('TransactionType')
+	transaction_time = transaction.get('TransTime')
+	business_short_code = transaction.get('BusinessShortCode')
+	third_party_id = transaction.get('ThirdPartyTransID')
+	invoice_number = transaction.get('InvoiceNumber')
+	organization_balance = transaction.get('OrgAccountBalance')
+	#now create the payment in the system here etc.
+	print("*"*80)
+	print("processing payments in here")
+	print(customer_phone_num)
+	print(customer_first_name)
+	print(transaction_amount)
+	print(transaction_id)
 
 
 if __name__ == '__main__':
